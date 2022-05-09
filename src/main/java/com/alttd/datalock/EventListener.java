@@ -96,6 +96,7 @@ public class EventListener {
         if (lockSet.contains(lock)) {
             //An entry from this server already exists, so we can say that it's locked
             out.writeBoolean(true);
+            out.writeUTF(lock.getData());
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
             return;
         }
@@ -113,6 +114,7 @@ public class EventListener {
             else {
                 //An entry from another server exists, so we can't lock it
                 out.writeBoolean(false);
+                out.writeUTF(lock.getData());
                 serverConnection.sendPluginMessage(identifier, out.toByteArray());
                 queueLock(queuedLocks.getOrDefault(identifier, new HashSet<>()), identifier, lock, serverConnection);
                 return;
@@ -124,6 +126,7 @@ public class EventListener {
         channelLockMap.put(identifier, lockSet);
 
         out.writeBoolean(true);
+        out.writeUTF(lock.getData());
         serverConnection.sendPluginMessage(identifier, out.toByteArray());
     }
 
@@ -139,6 +142,7 @@ public class EventListener {
         else
             out.writeBoolean(false); //The data is not locked
 
+        out.writeUTF(lock.getData());
         serverConnection.sendPluginMessage(identifier, out.toByteArray());
     }
 
@@ -150,6 +154,7 @@ public class EventListener {
         if (lockSet.contains(lock)) //Lock is in the list, but it's made by this server, so we can unlock it
         {
             out.writeBoolean(true);
+            out.writeUTF(lock.getData());
             lockSet.remove(lock);
             channelLockMap.put(identifier, lockSet);
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
@@ -161,6 +166,7 @@ public class EventListener {
         if (first.isEmpty()) //There is no entry with this data, so we can say it's unlocked
         {
             out.writeBoolean(true);
+            out.writeUTF(lock.getData());
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
             queueNextLock(lockSet, lock, identifier);
             return;
@@ -168,6 +174,7 @@ public class EventListener {
 
         //There is an entry with this data, but it's not owned by this server, so we can't unlock it
         out.writeBoolean(false);
+        out.writeUTF(lock.getData());
         serverConnection.sendPluginMessage(identifier, out.toByteArray());
     }
 
