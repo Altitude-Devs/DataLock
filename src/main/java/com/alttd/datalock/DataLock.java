@@ -26,15 +26,18 @@ public class DataLock {
     private final Path dataDirectory;
 
     @Inject
-    public DataLock(ProxyServer proxyServer, Logger proxyLogger, @DataDirectory Path proxydataDirectory) {
+    public DataLock(ProxyServer proxyServer, Logger proxyLogger, @DataDirectory Path proxyDataDirectory) {
         instance = this;
         server = proxyServer;
         logger = proxyLogger;
-        dataDirectory = proxydataDirectory;
+        dataDirectory = proxyDataDirectory;
     }
 
     @Subscribe
     public void onProxyInitialization(ProxyInitializeEvent event) {
+        reloadConfig();
+        server.getEventManager().register(this, EventListener.getInstance());
+        new Reload(server);
     }
 
     public static DataLock getInstance() {
@@ -43,5 +46,18 @@ public class DataLock {
 
     public static Logger getLogger() {
         return getInstance().logger;
+    }
+
+    public static ProxyServer getServer() {
+        return getInstance().server;
+    }
+
+    public static Path getDataDirectory() {
+        return getInstance().dataDirectory;
+    }
+
+    public void reloadConfig() {
+        Config.init();
+        EventListener.reload();
     }
 }

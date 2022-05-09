@@ -8,23 +8,40 @@ import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
+import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
 
 import java.util.*;
 
 public class EventListener {
 
+    private final HashMap<ChannelIdentifier, HashSet<Lock>> queuedLocks = new HashMap<>();
     private final HashMap<ChannelIdentifier, HashSet<Lock>> channelLockMap = new HashMap<>();
     private final static List<ChannelIdentifier> channelIdentifierList = new ArrayList<>();
+    private static EventListener instance = null;
 
-    public EventListener(List<ChannelIdentifier> channelIdentifierList)
-    {
-        EventListener.reload(channelIdentifierList);
+    public static EventListener getInstance() {
+        return instance;
     }
 
-    public static void reload(List<ChannelIdentifier> channelIdentifierList)
+    public static void reload()
     {
+        if (instance == null)
+            instance = new EventListener();
         EventListener.channelIdentifierList.clear();
-        EventListener.channelIdentifierList.addAll(channelIdentifierList);
+        for (String s : Config.PLUGIN_MESSAGE_CHANNELS) {
+            String[] split = s.split(":");
+            if (split.length != 2) {
+                Logger.warn("Invalid message channel [%] in config.", s);
+                continue;
+            }
+            MinecraftChannelIdentifier minecraftChannelIdentifier = MinecraftChannelIdentifier.create(split[0], split[1]);
+            if (EventListener.channelIdentifierList.contains(minecraftChannelIdentifier)) {
+                Logger.warn("Duplicate message channel [%] in config.", s);
+                continue;
+            }
+            EventListener.channelIdentifierList.add(minecraftChannelIdentifier);
+        }
     }
 
     @Subscribe
@@ -76,19 +93,30 @@ public class EventListener {
         out.writeUTF("try-lock-result");
 
         Lock lock = new Lock(serverConnection.getServerInfo().hashCode(), data);
-        if (lockSet.contains(lock)) //An entry from this server already exists, so we can say that it's locked
-        {
+        if (lockSet.contains(lock)) {
+            //An entry from this server already exists, so we can say that it's locked
             out.writeBoolean(true);
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
             return;
         }
 
-        Optional<Lock> first = lockSet.stream().filter(a -> a.compareTo(lock) == 0).findFirst();
-        if (first.isPresent()) //An entry from another server exists, so we can't lock it
-        {
-            out.writeBoolean(false);
-            serverConnection.sendPluginMessage(identifier, out.toByteArray());
-            return;
+        Optional<Lock> optionalActiveLock = lockSet.stream().filter(a -> a.compareTo(lock) == 0).findAny();
+        if (optionalActiveLock.isPresent()) {
+            Lock activeLock = optionalActiveLock.get();
+            if (DataLock.getServer().getAllServers().stream()
+                    .filter(sc -> !sc.getPlayersConnected().isEmpty())
+                    .noneMatch(sc -> activeLock.getServerHash() == sc.getServerInfo().hashCode())) {
+                //The server the active lock belongs to is no longer present, we can remove it and apply the new lock
+                Logger.warn("Removing lock [%] due to being unable to find a server where that lock was active", activeLock.getData());
+                lockSet.remove(activeLock);
+            }
+            else {
+                //An entry from another server exists, so we can't lock it
+                out.writeBoolean(false);
+                serverConnection.sendPluginMessage(identifier, out.toByteArray());
+                queueLock(queuedLocks.getOrDefault(identifier, new HashSet<>()), identifier, lock, serverConnection);
+                return;
+            }
         }
 
         //Lock the data
@@ -125,6 +153,7 @@ public class EventListener {
             lockSet.remove(lock);
             channelLockMap.put(identifier, lockSet);
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
+            queueNextLock(lockSet, lock, identifier);
             return;
         }
 
@@ -133,12 +162,66 @@ public class EventListener {
         {
             out.writeBoolean(true);
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
+            queueNextLock(lockSet, lock, identifier);
             return;
         }
 
         //There is an entry with this data, but it's not owned by this server, so we can't unlock it
         out.writeBoolean(false);
         serverConnection.sendPluginMessage(identifier, out.toByteArray());
+    }
+
+    private void queueLock(HashSet<Lock> lockSet, ChannelIdentifier identifier, Lock lock, ServerConnection serverConnection) {
+        if (lockSet.contains(lock)) {
+            //Lock already queued we don't have to queue it again
+            return;
+        }
+        Optional<Lock> optionalQueuedLock = lockSet.stream().filter(a -> a.compareTo(lock) != 0).findAny();
+        if (optionalQueuedLock.isPresent()) {
+            Lock queuedLock = optionalQueuedLock.get();
+            Optional<RegisteredServer> optionalRegisteredServer = DataLock.getServer().getAllServers().stream()
+                    .filter(sc -> queuedLock.getServerHash() == sc.getServerInfo().hashCode())
+                    .findAny();
+            if (optionalRegisteredServer.isPresent()) {
+                //The server that queued this lock is still active, so we can't queue a new one
+                RegisteredServer registeredServer = optionalRegisteredServer.get();
+                ByteArrayDataOutput out = ByteStreams.newDataOutput();
+                out.writeUTF("queue-lock-failed");
+                out.writeUTF(queuedLock.getData());
+                out.writeUTF(registeredServer.getServerInfo().getName());
+                serverConnection.sendPluginMessage(identifier, out.toByteArray());
+                return;
+            }
+            Logger.warn("Removing queued lock [%] due to being unable to find a server where that lock could be active", queuedLock.getData());
+            lockSet.remove(queuedLock);
+        }
+        lockSet.add(lock);
+        queuedLocks.put(identifier, lockSet);
+    }
+
+    private void queueNextLock(HashSet<Lock> lockSet, Lock lock, ChannelIdentifier identifier) {
+        if (!queuedLocks.containsKey(identifier))
+            return;
+        HashSet<Lock> queuedLockSet = queuedLocks.get(identifier);
+        Optional<Lock> optionalQueuedLock = queuedLockSet.stream().filter(l -> l.compareTo(lock) == 0).findFirst();
+        if (optionalQueuedLock.isEmpty())
+            return;
+        Lock queuedLock = optionalQueuedLock.get();
+        queuedLockSet.remove(lock);
+
+        Optional<RegisteredServer> optionalRegisteredServer = DataLock.getServer().getAllServers().stream()
+                .filter(registeredServer -> registeredServer.getServerInfo().hashCode() == queuedLock.getServerHash())
+                .findAny();
+        if (optionalRegisteredServer.isEmpty()) {
+            Logger.warn("Removing queued lock [%] due to being unable to find a server where that lock could be active", queuedLock.getData());
+            return;
+        }
+        RegisteredServer registeredServer = optionalRegisteredServer.get();
+        lockSet.add(queuedLock);
+        ByteArrayDataOutput out = ByteStreams.newDataOutput();
+        out.writeUTF("locked-queued-lock");
+        out.writeUTF(queuedLock.getData());
+        registeredServer.sendPluginMessage(identifier, out.toByteArray());
     }
 
 }

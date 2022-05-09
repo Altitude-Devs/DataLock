@@ -15,6 +15,14 @@ public class Lock implements Comparable {
         this.data = data;
     }
 
+    public int getServerHash() {
+        return serverHash;
+    }
+
+    public String getData() {
+        return data;
+    }
+
     @Override
     public final boolean equals(@Nullable Object o) {
         if (this == o) {
