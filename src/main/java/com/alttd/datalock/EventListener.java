@@ -147,10 +147,11 @@ public class EventListener {
     }
 
     private void tryUnlock(ChannelIdentifier identifier, HashSet<Lock> lockSet, String data, ServerConnection serverConnection) {
+        int hash = serverConnection.getServerInfo().hashCode();
         ByteArrayDataOutput out = ByteStreams.newDataOutput();
         out.writeUTF("try-unlock-result");
 
-        Lock lock = new Lock(serverConnection.getServerInfo().hashCode(), data);
+        Lock lock = new Lock(hash, data);
         if (lockSet.contains(lock)) //Lock is in the list, but it's made by this server, so we can unlock it
         {
             out.writeBoolean(true);
@@ -165,6 +166,7 @@ public class EventListener {
         Optional<Lock> first = lockSet.stream().filter(a -> a.compareTo(lock) == 0).findFirst();
         if (first.isEmpty()) //There is no entry with this data, so we can say it's unlocked
         {
+            removeQueuedLock(queuedLocks.get(identifier), lock, hash);
             out.writeBoolean(true);
             out.writeUTF(lock.getData());
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
@@ -176,6 +178,17 @@ public class EventListener {
         out.writeBoolean(false);
         out.writeUTF(lock.getData());
         serverConnection.sendPluginMessage(identifier, out.toByteArray());
+    }
+
+    private void removeQueuedLock(HashSet<Lock> locks, Lock exampleLock, int hash) {
+        if (locks == null)
+            return;
+        Optional<Lock> other = locks.stream().filter(a -> a.compareTo(exampleLock) == 0).findFirst();
+        if (other.isEmpty())
+            return;
+        Lock lock = other.get();
+        if (lock.getServerHash() == hash)
+            locks.remove(lock);
     }
 
     private void queueLock(HashSet<Lock> lockSet, ChannelIdentifier identifier, Lock lock, ServerConnection serverConnection) {
