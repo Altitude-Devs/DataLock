@@ -29,7 +29,7 @@
 			<li>UTF: data (data to lock/check/unlock)</li>
 		</ul>
 	</li>
-  <li><code>try-lock-result</code>
+	<li><code>try-lock-result</code>/<code>check-lock-result</code>
 		<ul>
     	<li>UTF: sub channel (the sub channel)
     	<li>boolean: success (if the lock/unlock succeeded or not or if the data was locked or not)</li>
