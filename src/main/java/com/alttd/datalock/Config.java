@@ -30,7 +30,7 @@ public final class Config {
     public static File CONFIG_PATH;
 
     public static void init() { // todo setup share for the config
-        CONFIG_PATH = new File(DataLock.getDataDirectory().toAbsolutePath() + File.separator + "DataLock");
+        CONFIG_PATH = new File(DataLock.getDataDirectory().toAbsolutePath().toString());
         File configFile = new File(CONFIG_PATH, "config.yml");
 
         configLoader = YAMLConfigurationLoader.builder()
@@ -152,8 +152,12 @@ public final class Config {
      * ONLY EDIT ANYTHING BELOW THIS LINE
      **/
     public static List<String> PLUGIN_MESSAGE_CHANNELS = new ArrayList<>(List.of("example_plugin:table_1"));
+    public static boolean DEBUG = false;
 
-    private static void loadGroups() {
+    private static void loadSettings() {
         PLUGIN_MESSAGE_CHANNELS = getList("settings.channels", new ArrayList<>(List.of("example_plugin:table_1")));
+        DEBUG = getBoolean("settings.debug", DEBUG);
+        if (DEBUG)
+            Logger.info("DEBUG: on");
     }
 }

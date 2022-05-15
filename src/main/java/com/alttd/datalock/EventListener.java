@@ -8,6 +8,7 @@ import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
+import com.velocitypowered.api.proxy.messages.ChannelRegistrar;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 
@@ -29,6 +30,7 @@ public class EventListener {
         if (instance == null)
             instance = new EventListener();
         EventListener.channelIdentifierList.clear();
+        ChannelRegistrar channelRegistrar = DataLock.getServer().getChannelRegistrar();
         for (String s : Config.PLUGIN_MESSAGE_CHANNELS) {
             String[] split = s.split(":");
             if (split.length != 2) {
@@ -40,13 +42,34 @@ public class EventListener {
                 Logger.warn("Duplicate message channel [%] in config.", s);
                 continue;
             }
+            if (Config.DEBUG)
+                Logger.info("Loaded entry [%] as [%].", s, minecraftChannelIdentifier.asKey().asString());
             EventListener.channelIdentifierList.add(minecraftChannelIdentifier);
+            channelRegistrar.register(minecraftChannelIdentifier);
         }
+    }
+
+    public void clearServer(int hashCode) {
+        channelLockMap.forEach((identifier, value) -> {
+            HashSet<Lock> temp = new HashSet<>();
+            for (Lock lock : value) {
+                if (lock.getServerHash() == hashCode)
+                    temp.add(lock);
+            }
+            for (Lock lock : temp) {
+                value.remove(lock);
+                queueNextLock(value, lock, identifier);
+                if (Config.DEBUG)
+                    Logger.info("Clearing % from % due to clear server being called for the server that lock is on", lock.getData(), identifier.getId());
+            }
+        });
     }
 
     @Subscribe
     public void onPluginMessageEvent(PluginMessageEvent event) {
         ChannelIdentifier identifier = event.getIdentifier();
+        if (Config.DEBUG)
+            Logger.info("Received message on [%].", identifier.getId());
         if (!EventListener.channelIdentifierList.contains(identifier))
             return;
 
@@ -80,6 +103,9 @@ public class EventListener {
                     identifier.getId());
             return;
         }
+
+        if (Config.DEBUG)
+            Logger.info("Plugin message channel: [%]", channel.toLowerCase());
 
         switch (channel.toLowerCase()) {
             case "try-lock" -> tryLock(identifier, hashLock, data, serverConnection);

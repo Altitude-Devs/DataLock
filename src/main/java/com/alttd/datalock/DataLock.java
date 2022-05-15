@@ -37,6 +37,7 @@ public class DataLock {
     public void onProxyInitialization(ProxyInitializeEvent event) {
         reloadConfig();
         server.getEventManager().register(this, EventListener.getInstance());
+        server.getEventManager().register(this, new PlayerListener());
         new Reload(server);
     }
 
