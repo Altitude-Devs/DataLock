@@ -25,13 +25,13 @@ public class Lock implements Comparable {
 
     @Override
     public final boolean equals(@Nullable Object o) {
-        if (this == o) {
+        Lock other = (Lock) o;
+        if (this == other) {
             return true;
         }
-        if (o == null || getClass() != o.getClass()) {
+        if (other == null || getClass() != other.getClass()) {
             return false;
         }
-        Lock other = (Lock) o;
         return data.equals(other.data) && serverHash == other.serverHash;
     }
 
@@ -43,6 +43,10 @@ public class Lock implements Comparable {
 
     @Override
     public int compareTo(@NotNull Object o) {
-        return ((Lock) o).data.compareTo(data);
+        Lock lock = (Lock) o;
+        int data = lock.data.compareTo(this.data);
+        if (data != 0)
+            return data;
+        return Integer.compare(lock.getServerHash(), getServerHash());
     }
 }
