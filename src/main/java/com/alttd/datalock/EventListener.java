@@ -13,23 +13,25 @@ import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class EventListener {
 
     private final HashMap<ChannelIdentifier, HashSet<Lock>> queuedLocks = new HashMap<>();
     private final HashMap<ChannelIdentifier, HashSet<Lock>> channelLockMap = new HashMap<>();
-    private final static List<ChannelIdentifier> channelIdentifierList = new ArrayList<>();
+    private final List<ChannelIdentifier> channelIdentifierList = new ArrayList<>();
     private static EventListener instance = null;
 
     public static EventListener getInstance() {
+        if (instance == null)
+            return new EventListener();
         return instance;
     }
 
     public static void reload()
     {
-        if (instance == null)
-            instance = new EventListener();
-        EventListener.channelIdentifierList.clear();
+        instance = getInstance();
+        instance.channelIdentifierList.clear();
         ChannelRegistrar channelRegistrar = DataLock.getServer().getChannelRegistrar();
         for (String s : Config.PLUGIN_MESSAGE_CHANNELS) {
             String[] split = s.split(":");
@@ -38,13 +40,13 @@ public class EventListener {
                 continue;
             }
             MinecraftChannelIdentifier minecraftChannelIdentifier = MinecraftChannelIdentifier.create(split[0], split[1]);
-            if (EventListener.channelIdentifierList.contains(minecraftChannelIdentifier)) {
+            if (instance.channelIdentifierList.contains(minecraftChannelIdentifier)) {
                 Logger.warn("Duplicate message channel [%] in config.", s);
                 continue;
             }
             if (Config.DEBUG)
                 Logger.info("Loaded entry [%] as [%].", s, minecraftChannelIdentifier.asKey().asString());
-            EventListener.channelIdentifierList.add(minecraftChannelIdentifier);
+            instance.channelIdentifierList.add(minecraftChannelIdentifier);
             channelRegistrar.register(minecraftChannelIdentifier);
         }
     }
@@ -65,13 +67,32 @@ public class EventListener {
         });
     }
 
+    private String formatLockMap(HashMap<ChannelIdentifier, HashSet<Lock>> map) {
+        StringBuilder stringBuilder = new StringBuilder();
+        for (ChannelIdentifier plugin : map.keySet()) {
+            stringBuilder
+                    .append(plugin)
+                    .append("\n")
+                    .append(
+                            map.get(plugin)
+                                    .stream()
+                                    .map(lock -> lock.getData() + " : " + lock.getServerHash())
+                                    .collect(Collectors.joining(", ")))
+                    .append("\n---\n");
+        }
+        return stringBuilder.toString();
+    }
+
     @Subscribe
     public void onPluginMessageEvent(PluginMessageEvent event) {
         ChannelIdentifier identifier = event.getIdentifier();
         if (Config.DEBUG)
             Logger.info("Received message on [%].", identifier.getId());
-        if (!EventListener.channelIdentifierList.contains(identifier))
+        if (!channelIdentifierList.contains(identifier))
             return;
+
+        if (Config.DEBUG)
+            Logger.info("\nCurrent locks:\n%\nQueued locks:\n%", formatLockMap(channelLockMap), formatLockMap(queuedLocks));
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
 
