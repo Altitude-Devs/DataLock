@@ -52,18 +52,20 @@ public class EventListener {
     }
 
     public void clearServer(int hashCode) {
-        channelLockMap.forEach((identifier, value) -> {
+        channelLockMap.keySet().forEach(key -> {
             HashSet<Lock> temp = new HashSet<>();
-            for (Lock lock : value) {
+            HashSet<Lock> locks = channelLockMap.get(key);
+            for (Lock lock : locks) {
                 if (lock.getServerHash() == hashCode)
                     temp.add(lock);
             }
             for (Lock lock : temp) {
-                value.remove(lock);
-                queueNextLock(value, lock, identifier);
+                locks.remove(lock);
+                queueNextLock(locks, lock, key);
                 if (Config.DEBUG)
-                    Logger.info("Clearing % from % due to clear server being called for the server that lock is on", lock.getData(), identifier.getId());
+                    Logger.info("Clearing % from % due to clear server being called for the server that lock is on", lock.getData(), key.getId());
             }
+            channelLockMap.put(key, locks);
         });
     }
 
@@ -72,7 +74,9 @@ public class EventListener {
         for (ChannelIdentifier plugin : map.keySet()) {
             stringBuilder
                     .append(plugin)
-                    .append("\n")
+                    .append(": ")
+                    .append(map.get(plugin).size())
+                    .append(" entries\n")
                     .append(
                             map.get(plugin)
                                     .stream()
@@ -204,9 +208,9 @@ public class EventListener {
             out.writeBoolean(true);
             out.writeUTF(lock.getData());
             lockSet.remove(lock);
+            queueNextLock(lockSet, lock, identifier);
             channelLockMap.put(identifier, lockSet);
             serverConnection.sendPluginMessage(identifier, out.toByteArray());
-            queueNextLock(lockSet, lock, identifier);
             return;
         }
 
@@ -270,17 +274,19 @@ public class EventListener {
         if (!queuedLocks.containsKey(identifier))
             return;
         HashSet<Lock> queuedLockSet = queuedLocks.get(identifier);
-        Optional<Lock> optionalQueuedLock = queuedLockSet.stream().filter(l -> l.compareTo(lock) == 0).findFirst();
+        Optional<Lock> optionalQueuedLock = queuedLockSet.stream().filter(l -> l.getData().equals(lock.getData())).findFirst();
         if (optionalQueuedLock.isEmpty())
             return;
         Lock queuedLock = optionalQueuedLock.get();
-        queuedLockSet.remove(lock);
+        queuedLockSet.remove(queuedLock);
+        queuedLocks.put(identifier, queuedLockSet);
 
         Optional<RegisteredServer> optionalRegisteredServer = DataLock.getServer().getAllServers().stream()
                 .filter(registeredServer -> registeredServer.getServerInfo().hashCode() == queuedLock.getServerHash())
                 .findAny();
         if (optionalRegisteredServer.isEmpty()) {
             Logger.warn("Removing queued lock [%] due to being unable to find a server where that lock could be active", queuedLock.getData());
+            queueNextLock(lockSet, lock, identifier);
             return;
         }
         RegisteredServer registeredServer = optionalRegisteredServer.get();

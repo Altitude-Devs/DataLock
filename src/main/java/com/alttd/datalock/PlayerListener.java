@@ -6,6 +6,7 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 
+import java.util.Collection;
 import java.util.Optional;
 
 public class PlayerListener {
@@ -14,14 +15,15 @@ public class PlayerListener {
     void onPlayerConnect(ServerConnectedEvent event) {
         Player player = event.getPlayer();
         ServerInfo serverInfo = event.getServer().getServerInfo();
-        if (event.getServer().getPlayersConnected().stream().filter(p -> p.equals(player)).findAny().isEmpty())
+        Collection<Player> playersConnected = event.getServer().getPlayersConnected();
+        if (playersConnected.isEmpty() || playersConnected.size() == 1 && playersConnected.contains(player))
             EventListener.getInstance().clearServer(serverInfo.hashCode());
 
         Optional<RegisteredServer> previousServer = event.getPreviousServer();
         if (previousServer.isEmpty())
             return;
         serverInfo = previousServer.get().getServerInfo();
-        if (event.getServer().getPlayersConnected().stream().filter(p -> p.equals(player)).findAny().isEmpty())
+        if (playersConnected.isEmpty() || playersConnected.size() == 1 && playersConnected.contains(player))
             EventListener.getInstance().clearServer(serverInfo.hashCode());
     }
 
