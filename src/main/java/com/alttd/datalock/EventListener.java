@@ -129,6 +129,9 @@ public class EventListener {
             return;
         }
 
+        if (!isValid(channel.toLowerCase(), data))
+            return;
+
         if (Config.DEBUG)
             Logger.info("Plugin message channel: [%]", channel.toLowerCase());
 
@@ -136,6 +139,23 @@ public class EventListener {
             case "try-lock" -> tryLock(identifier, hashLock, data, serverConnection);
             case "check-lock" -> checkLock(identifier, hashLock, data, serverConnection);
             case "try-unlock" -> tryUnlock(identifier, hashLock, data, serverConnection);
+        }
+    }
+
+    private final HashMap<String, Long> validMap = new HashMap<>();
+    private synchronized boolean isValid(String channel, String data) {
+        String key = channel + data;
+        long currentTime = new Date().getTime();
+        if (validMap.containsKey(key)) {
+            Long time = validMap.get(key);
+            if (time < (currentTime - 1000)) {
+                validMap.remove(key);
+                return true;
+            }
+            return false;
+        } else {
+            validMap.put(key, currentTime);
+            return true;
         }
     }
 
