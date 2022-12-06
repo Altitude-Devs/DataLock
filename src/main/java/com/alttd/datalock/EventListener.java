@@ -99,7 +99,7 @@ public class EventListener {
             return;
 
         if (Config.DEBUG)
-            Logger.info("\nCurrent locks:\n%\nQueued locks:\n%", formatLockMap(channelLockMap), formatLockMap(queuedLocks));
+            Logger.info("Current locks:\n%\nQueued locks:\n%", formatLockMap(channelLockMap), formatLockMap(queuedLocks));
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
 
