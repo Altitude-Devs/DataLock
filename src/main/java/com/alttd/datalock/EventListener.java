@@ -19,10 +19,19 @@ public class EventListener {
 
     private EventListener() {}
 
-//    private final Idempotency idempotencyStorage = new Idempotency();
+    //    private final Idempotency idempotencyStorage = new Idempotency();
     private final HashMap<ChannelIdentifier, HashSet<Lock>> queuedLocks = new HashMap<>();
     private final HashMap<ChannelIdentifier, HashSet<Lock>> channelLockMap = new HashMap<>();
+
+    private synchronized void putDataInChannelLockMap(ChannelIdentifier identifier, HashSet<Lock> set) {
+        channelLockMap.put(identifier, set);
+    }
+
+    private synchronized HashSet<Lock> getSetFromChannelLockMap(ChannelIdentifier identifier) {
+        return channelLockMap.getOrDefault(identifier, new HashSet<>());
+    }
     private final List<ChannelIdentifier> channelIdentifierList = new ArrayList<>();
+
     private static EventListener instance = null;
 
     public static EventListener getInstance() {
@@ -54,7 +63,7 @@ public class EventListener {
         }
     }
 
-    public void clearServer(int hashCode) {
+    public synchronized void clearServer(int hashCode) {
         channelLockMap.keySet().forEach(key -> {
             HashSet<Lock> temp = new HashSet<>();
             HashSet<Lock> locks = channelLockMap.get(key);
@@ -68,11 +77,11 @@ public class EventListener {
                 if (Config.DEBUG)
                     Logger.info("Clearing % from % due to clear server being called for the server that lock is on", lock.getData(), key.getId());
             }
-            channelLockMap.put(key, locks);
+            putDataInChannelLockMap(key, locks);
         });
     }
 
-    private String formatLockMap(HashMap<ChannelIdentifier, HashSet<Lock>> map) {
+    private synchronized String formatLockMap(HashMap<ChannelIdentifier, HashSet<Lock>> map) {
         StringBuilder stringBuilder = new StringBuilder();
         for (ChannelIdentifier plugin : map.keySet()) {
             stringBuilder
@@ -113,7 +122,7 @@ public class EventListener {
             return;
         }
 
-        HashSet<Lock> hashLock = channelLockMap.getOrDefault(identifier, new HashSet<>());
+        HashSet<Lock> hashLock = getSetFromChannelLockMap(identifier);
         ByteArrayDataInput in = ByteStreams.newDataInput(event.getData());
         String channel;
         try {
@@ -221,7 +230,7 @@ public class EventListener {
 
         //Lock the data
         lockSet.add(lock);
-        channelLockMap.put(identifier, lockSet);
+        putDataInChannelLockMap(identifier, lockSet);
         sendPluginMessage(channel, true, lock.getData(), idempotency, serverConnection, identifier);
     }
 
@@ -249,7 +258,7 @@ public class EventListener {
         {
             lockSet.remove(lock);
             queueNextLock(lockSet, lock, identifier, idempotency);
-            channelLockMap.put(identifier, lockSet);
+            putDataInChannelLockMap(identifier, lockSet);
             sendPluginMessage(channel, true, lock.getData(), idempotency, serverConnection, identifier);
             return;
         }
